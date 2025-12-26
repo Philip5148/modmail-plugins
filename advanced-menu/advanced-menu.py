@@ -111,28 +111,52 @@ class AdvancedMenu(commands.Cog):
         )
 
     @commands.Cog.listener()
-    async def on_thread_ready(self, thread, creator, category, initial_message):
-        if self.config["enabled"] and self.config["options"] != {}:
-            dummyMessage = DummyMessage(copy(initial_message))
-            dummyMessage.author = self.bot.modmail_guild.me
+async def on_thread_ready(self, thread, creator, category, initial_message):
+    if self.config["enabled"] and self.config["options"] != {}:
+        dummyMessage = DummyMessage(copy(initial_message))
+        dummyMessage.author = self.bot.modmail_guild.me
+
+        # Only set content if embed_text is not "None"
+        if self.config["embed_text"].lower() != "none":
             dummyMessage.content = self.config["embed_text"]
+        else:
+            dummyMessage.content = None
 
-            # clear message of residual attributes from the copy
-            dummyMessage.attachments = []
-            dummyMessage.components = []
-            dummyMessage.embeds = []
-            dummyMessage.stickers = []
+        # clear message of residual attributes from the copy
+        dummyMessage.attachments = []
+        dummyMessage.components = []
+        dummyMessage.embeds = []
+        dummyMessage.stickers = []
 
+        # If embed_text is None, attach dropdown to last sent embed in thread
+        if dummyMessage.content is None:
+            # find last message from bot in thread
+            last_bot_msg = None
+            async for m in thread.history(limit=50):
+                if m.author == self.bot.modmail_guild.me:
+                    last_bot_msg = m
+                    break
+
+            if last_bot_msg is not None:
+                await last_bot_msg.edit(view=DropdownView(self.bot, last_bot_msg, thread, self.config, self.config["options"], True))
+            else:
+                # fallback: send dropdown as normal if no previous message found
+                msgs, _ = await thread.reply(dummyMessage, self.config["anonymous_menu"])
+                main_recipient_msg = None
+                for m in msgs:
+                    if m.channel.recipient == thread.recipient:
+                        main_recipient_msg = m
+                        break
+                await main_recipient_msg.edit(view=DropdownView(self.bot, main_recipient_msg, thread, self.config, self.config["options"], True))
+        else:
+            # Normal behavior: send embed + dropdown
             msgs, _ = await thread.reply(dummyMessage, self.config["anonymous_menu"])
             main_recipient_msg = None
-
             for m in msgs:
                 if m.channel.recipient == thread.recipient:
                     main_recipient_msg = m
                     break
-
             await main_recipient_msg.edit(view=DropdownView(self.bot, main_recipient_msg, thread, self.config, self.config["options"], True))
-
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     @commands.group(invoke_without_command=True)
     async def advancedmenu(self, ctx):
